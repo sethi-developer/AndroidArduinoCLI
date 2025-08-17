@@ -1,28 +1,47 @@
 package com.demo.myarduinodroid
 
-import android.Manifest
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,128 +50,326 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import com.demo.myarduinodroid.ui.theme.MyArduinodroidTheme
-import java.io.File
-import java.io.FileWriter
-import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 
 class MainActivity : ComponentActivity() {
     private lateinit var arduinoCLI: ArduinoCLIBridge
-    private lateinit var usbManager: UsbManager
-    private var usbDevice: UsbDevice? = null
-    private var usbConnection: UsbDeviceConnection? = null
-    
-    companion object {
-        private const val TAG = "MainActivity"
-        private const val ACTION_USB_PERMISSION = "com.demo.myarduinodroid.USB_PERMISSION"
-    }
-    
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            Toast.makeText(this, "Storage permission granted", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Storage permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    private val usbReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val action = intent?.action
-            if (ACTION_USB_PERMISSION == action) {
-                synchronized(this) {
-                    val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
-                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                        device?.let {
-                            usbDevice = it
-                            usbConnection = usbManager.openDevice(it)
-                            if (usbConnection != null) {
-                                Toast.makeText(this@MainActivity, "USB device connected", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    } else {
-                        Toast.makeText(this@MainActivity, "USB permission denied", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
-    }
-    
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         
-        // Initialize Arduino CLI and USB manager
-        initializeArduinoCLI()
-        initializeUSBManager()
-        checkPermissions()
+        // Initialize Arduino CLI
+        arduinoCLI = ArduinoCLIBridge()
         
         setContent {
             MyArduinodroidTheme {
+                var currentScreen by remember { mutableStateOf("main") }
+                
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    ArduinoCLIScreen(
-                        modifier = Modifier.padding(innerPadding),
-                        arduinoCLI = arduinoCLI,
-                        onConnect = { requestUsbPermission() },
-                        onDisconnect = { disconnectUSB() }
-                    )
-                }
-            }
-        }
-    }
-    
-    private fun initializeArduinoCLI() {
-        arduinoCLI = ArduinoCLIBridge()
-        Thread {
-            try {
-                val result = arduinoCLI.initArduinoCLI()
-                runOnUiThread {
-                    if (result == 0) {
-                        Log.d(TAG, "Arduino CLI initialized successfully")
-                    } else {
-                        Log.e(TAG, "Failed to initialize Arduino CLI")
+                    when (currentScreen) {
+                        "main" -> MainScreen(
+                            arduinoCLI = arduinoCLI,
+                            onNavigateToLibraryManagement = { currentScreen = "library" }
+                        )
+                        "library" -> LibraryManagementScreen(
+                            arduinoCLI = arduinoCLI,
+                            onBackPressed = { currentScreen = "main" }
+                        )
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error initializing Arduino CLI", e)
             }
-        }.start()
-    }
-    
-    private fun initializeUSBManager() {
-        usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
-        val filter = IntentFilter(ACTION_USB_PERMISSION)
-        registerReceiver(usbReceiver, filter)
-    }
-    
-    private fun checkPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) 
-                != PackageManager.PERMISSION_GRANTED) {
-            requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
     }
-    
-    private fun requestUsbPermission() {
-        // For demo purposes, we'll simulate a connection
-        Toast.makeText(this, "USB connection simulated", Toast.LENGTH_SHORT).show()
-    }
-    
-    private fun disconnectUSB() {
-        usbConnection?.close()
-        usbConnection = null
-        usbDevice = null
-        Toast.makeText(this, "Disconnected", Toast.LENGTH_SHORT).show()
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        unregisterReceiver(usbReceiver)
-        usbConnection?.close()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(
+    arduinoCLI: ArduinoCLIBridge,
+    onNavigateToLibraryManagement: () -> Unit
+) {
+    var selectedBoard by remember { mutableStateOf("arduino:avr:uno") }
+    var outputText by remember { mutableStateOf("Arduino CLI Integration\nClick 'Check Library Status' to begin...") }
+    var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        // Header
+        Text(
+            text = "Arduino CLI Integration",
+            fontSize = 24.sp,
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        // Navigation Buttons
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        ) {
+            Button(
+                onClick = onNavigateToLibraryManagement,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Library Management")
+            }
+            
+            Button(
+                onClick = {
+                    scope.launch {
+                        outputText = "Checking Arduino CLI library status..."
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                arduinoCLI.getLibraryStatus()
+                            }
+                            outputText = "Library Status:\n$result"
+                        } catch (e: Exception) {
+                            outputText = "Error checking library status: ${e.message}"
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp)
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Check Status")
+            }
+        }
+
+        // Board Selection
+        Text(
+            text = "Select Board:",
+            fontSize = 18.sp,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        val boards = listOf(
+            "arduino:avr:uno",
+            "arduino:avr:nano",
+            "arduino:avr:mega",
+            "esp32:esp32:esp32",
+            "esp8266:esp8266:nodemcuv2"
+        )
+
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(bottom = 16.dp)
+        ) {
+            items(boards) { board ->
+                FilterChip(
+                    selected = selectedBoard == board,
+                    onClick = { selectedBoard = board },
+                    label = { Text(board) }
+                )
+            }
+        }
+
+        // Core Functions
+        Text(
+            text = "Core Functions",
+            fontSize = 18.sp,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+        ) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        outputText = "Listing boards..."
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                arduinoCLI.listBoards()
+                            }
+                            outputText = "Available Boards:\n$result"
+                        } catch (e: Exception) {
+                            outputText = "Error listing boards: ${e.message}"
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 4.dp)
+            ) {
+                Text("List Boards")
+            }
+            Button(
+                onClick = {
+                    scope.launch {
+                        outputText = "Getting board info..."
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                arduinoCLI.getBoardInfo(selectedBoard)
+                            }
+                            outputText = "Board Info:\n$result"
+                        } catch (e: Exception) {
+                            outputText = "Error getting board info: ${e.message}"
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp)
+            ) {
+                Text("Board Info")
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+        ) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        outputText = "Listing cores..."
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                arduinoCLI.listCores()
+                            }
+                            outputText = "Installed Cores:\n$result"
+                        } catch (e: Exception) {
+                            outputText = "Error listing cores: ${e.message}"
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 4.dp)
+            ) {
+                Text("List Cores")
+            }
+            Button(
+                onClick = {
+                    scope.launch {
+                        outputText = "Installing Arduino AVR core..."
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                arduinoCLI.installCore("arduino:avr")
+                            }
+                            outputText = "Core Install Result:\n$result"
+                        } catch (e: Exception) {
+                            outputText = "Error installing core: ${e.message}"
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 4.dp)
+            ) {
+                Text("Install Core")
+            }
+        }
+
+        // Compilation Section
+        Text(
+            text = "Sketch Compilation",
+            fontSize = 18.sp,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Button(
+            onClick = {
+                scope.launch {
+                    outputText = "Compiling sketch for $selectedBoard..."
+                    try {
+                        // First check if the library is available
+                        if (!arduinoCLI.isNativeLibraryAvailable()) {
+                            outputText = "❌ Cannot compile: Arduino CLI native library not available!\n\n" +
+                                       "Please click 'Check Library Status' to see what needs to be implemented.\n\n" +
+                                       "The .hex file cannot be generated until the native Arduino CLI library is implemented."
+                            return@launch
+                        }
+
+                        val sketchDir = createTestSketch(context)
+                        // The compileSketch method now automatically creates the build directory
+                        val result = withContext(Dispatchers.IO) {
+                            arduinoCLI.compileSketch(selectedBoard, sketchDir, "")
+                        }
+                        outputText = "Compilation Result:\n$result"
+                    } catch (e: Exception) {
+                        outputText = "❌ Compilation Error:\n${e.message}\n\n" +
+                                   "This error occurs because the Arduino CLI native library is not implemented yet.\n" +
+                                   "Click 'Check Library Status' for more information."
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        ) {
+            Icon(Icons.Default.Build, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Compile Sketch")
+        }
+
+        // Output Text
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = "Output",
+                    fontSize = 18.sp,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                if (isLoading) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Processing...")
+                    }
+                }
+                
+                Text(
+                    text = outputText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
     }
 }
 
