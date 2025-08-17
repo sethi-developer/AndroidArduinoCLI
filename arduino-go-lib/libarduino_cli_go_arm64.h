@@ -79,6 +79,7 @@ typedef struct { void *data; GoInt len; GoInt cap; } GoSlice;
 extern "C" {
 #endif
 
+extern int GoSetArduinoDataDir(char* dataDir);
 extern int GoInitArduinoCLI();
 extern int GoCompileSketch(char* fqbn, char* sketchDir, char* outDir, char* outBuf, int outBufLen);
 extern int GoUploadHex(char* hexPath, char* port, char* fqbn, char* outBuf, int outBufLen);

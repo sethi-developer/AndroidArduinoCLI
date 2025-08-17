@@ -67,6 +67,12 @@ class MainActivity : ComponentActivity() {
         // Initialize Arduino CLI
         arduinoCLI = ArduinoCLIBridge()
         
+        // Set Arduino data directory to use Android emulated storage
+        arduinoCLI.setArduinoDataDir(this)
+        
+        // Initialize the Arduino CLI system
+        arduinoCLI.nativeInitArduinoCLI()
+        
         setContent {
             MyArduinodroidTheme {
                 var currentScreen by remember { mutableStateOf("main") }
@@ -307,9 +313,9 @@ fun MainScreen(
                         }
 
                         val sketchDir = createTestSketch(context)
-                        // The compileSketch method now automatically creates the build directory
+                        // Pass the sketch directory as output directory to avoid nested build folders
                         val result = withContext(Dispatchers.IO) {
-                            arduinoCLI.compileSketch(selectedBoard, sketchDir, "")
+                            arduinoCLI.compileSketch(selectedBoard, sketchDir, sketchDir)
                         }
                         outputText = "Compilation Result:\n$result"
                     } catch (e: Exception) {
@@ -552,9 +558,9 @@ fun ArduinoCLIScreen(
                             }
                             
                             val sketchDir = createTestSketch(context)
-                            // The compileSketch method now automatically creates the build directory
+                            // Pass the sketch directory as output directory to avoid nested build folders
                             val result = withContext(Dispatchers.IO) {
-                                arduinoCLI.compileSketch(selectedBoard, sketchDir, "")
+                                arduinoCLI.compileSketch(selectedBoard, sketchDir, sketchDir)
                             }
                             outputText = "Compilation Result:\n$result"
                         } catch (e: Exception) {

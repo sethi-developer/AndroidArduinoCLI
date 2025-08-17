@@ -9,6 +9,7 @@ extern "C" {
 
 // Arduino CLI functions
 JNIEXPORT jint JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeInitArduinoCLI(JNIEnv *env, jobject obj);
+JNIEXPORT jint JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeSetArduinoDataDir(JNIEnv *env, jobject obj, jstring dataDir);
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeCompileSketch(JNIEnv *env, jobject obj, jstring fqbn, jstring sketchDir, jstring outDir);
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeUploadHex(JNIEnv *env, jobject obj, jstring hexPath, jstring port, jstring fqbn);
 

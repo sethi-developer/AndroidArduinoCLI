@@ -27,6 +27,20 @@ JNIEXPORT jint JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeInitA
     return GoInitArduinoCLI();
 }
 
+// Set Arduino data directory
+JNIEXPORT jint JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeSetArduinoDataDir(JNIEnv *env, jobject obj, jstring dataDir) {
+    char *dataDir_c = jstring_to_cstring(env, dataDir);
+    
+    if (!dataDir_c) {
+        return -1;
+    }
+    
+    int result = GoSetArduinoDataDir(dataDir_c);
+    free(dataDir_c);
+    
+    return result;
+}
+
 // Sketch compilation
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeCompileSketch(
     JNIEnv *env, jobject obj, 

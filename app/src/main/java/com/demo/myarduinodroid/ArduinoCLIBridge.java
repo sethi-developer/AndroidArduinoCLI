@@ -23,6 +23,13 @@ public class ArduinoCLIBridge {
     public native int nativeInitArduinoCLI();
 
     /**
+     * Set the Arduino data directory
+     * @param dataDir Path to the Arduino data directory
+     * @return 0 on success, -1 on failure
+     */
+    public native int nativeSetArduinoDataDir(String dataDir);
+
+    /**
      * Compile an Arduino sketch
      * @param fqbn Fully Qualified Board Name (e.g., "arduino:avr:uno")
      * @param sketchDir Directory containing the sketch
@@ -356,6 +363,20 @@ public class ArduinoCLIBridge {
             return "Error: Arduino CLI native library not available.\n" +
                    "Please implement the native Arduino CLI library first.\n" +
                    "Error: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Set the Arduino data directory to use Android emulated storage
+     * @param context Android context to get external files directory
+     * @return 0 on success, -1 on failure
+     */
+    public int setArduinoDataDir(android.content.Context context) {
+        try {
+            String arduinoDataDir = context.getExternalFilesDir(null).getAbsolutePath() + "/arduino_data";
+            return nativeSetArduinoDataDir(arduinoDataDir);
+        } catch (UnsatisfiedLinkError e) {
+            return -1;
         }
     }
 }
