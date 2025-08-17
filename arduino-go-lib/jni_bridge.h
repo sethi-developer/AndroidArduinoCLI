@@ -29,6 +29,7 @@ JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeLi
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeInstallLibrary(JNIEnv *env, jobject obj, jstring libName);
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeInstallLibraryFromZip(JNIEnv *env, jobject obj, jstring zipPath);
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeUninstallLibrary(JNIEnv *env, jobject obj, jstring libName);
+JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeReloadLibraries(JNIEnv *env, jobject obj);
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeSearchLibrary(JNIEnv *env, jobject obj, jstring searchTerm);
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeGetLibraryInfo(JNIEnv *env, jobject obj, jstring libName);
 

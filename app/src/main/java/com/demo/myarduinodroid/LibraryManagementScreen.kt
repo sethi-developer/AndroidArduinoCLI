@@ -1,8 +1,10 @@
 package com.demo.myarduinodroid
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +41,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,6 +57,7 @@ import androidx.compose.ui.unit.size
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +82,23 @@ fun LibraryManagementScreen(
     
     // State for Installed Libraries tab
     var installedLibraries by remember { mutableStateOf<List<String>>(emptyList()) }
+    
+    // Load installed libraries when the screen is first displayed
+    LaunchedEffect(Unit) {
+        scope.launch {
+            isLoading = true
+            try {
+                val result = arduinoCLI.listLibraries()
+                val libraries = parseLibraryResult(result)
+                installedLibraries = libraries
+                outputText = "Loaded ${libraries.size} installed libraries"
+            } catch (e: Exception) {
+                outputText = "Error loading libraries: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
     
     val zipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -106,6 +128,8 @@ fun LibraryManagementScreen(
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(start = 8.dp)
             )
+            
+            Spacer(modifier = Modifier.weight(1f))
         }
         
         // Tabs
@@ -187,14 +211,9 @@ fun LibraryManagementScreen(
                         outputText = "Refreshing installed libraries..."
                         try {
                             val result = arduinoCLI.listLibraries()
-                            outputText = "Installed Libraries:\n$result"
-                            
-                            // Parse the result to extract library names (simplified)
-                            val lines = result.split("\n")
-                            val libraries = lines.filter { it.contains("Library:") }
-                                .map { it.substringAfter("Library:").trim() }
-                                .filter { it.isNotEmpty() }
+                            val libraries = parseLibraryResult(result)
                             installedLibraries = libraries
+                            outputText = "Found ${libraries.size} installed libraries:\n$result"
                         } catch (e: Exception) {
                             outputText = "Error listing libraries: ${e.message}"
                         } finally {
@@ -205,21 +224,45 @@ fun LibraryManagementScreen(
                 onUninstallClick = { libraryName ->
                     scope.launch {
                         isLoading = true
-                        outputText = "Uninstalling library: $libraryName..."
+                        val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+                        outputText = "🕐 [$timestamp] Starting uninstall process for library: $libraryName...\nPlease wait..."
                         try {
+                            // Call the uninstall function
+                            outputText += "\n\n🔄 Calling Arduino CLI uninstall function..."
                             val result = arduinoCLI.uninstallLibrary(libraryName)
-                            outputText = "Uninstall Result:\n$result"
+                            outputText += "\n\n📋 UNINSTALL RESULT:\n$result"
                             
-                            // Refresh the list
+                            // Wait a moment for the operation to complete
+                            outputText += "\n\n⏳ Waiting for file system operations to complete..."
+                            delay(500)
+                            
+                            // Reload libraries from file system to ensure consistency
+                            outputText += "\n\n🔄 Reloading libraries from file system..."
+                            val reloadResult = arduinoCLI.reloadLibraries()
+                            outputText += "\n\n📋 RELOAD RESULT:\n$reloadResult"
+                            
+                            // Get the updated library list
+                            outputText += "\n\n🔄 Getting updated library list..."
                             val refreshResult = arduinoCLI.listLibraries()
-                            val lines = refreshResult.split("\n")
-                            val libraries = lines.filter { it.contains("Library:") }
-                                .map { it.substringAfter("Library:").trim() }
-                                .filter { it.isNotEmpty() }
+                            val libraries = parseLibraryResult(refreshResult)
+                            
+                            // Update the UI state
                             installedLibraries = libraries
+                            
+                            // Show final result
+                            outputText += "\n\n✅ FINAL RESULT: Library list updated. Found ${libraries.size} libraries."
+                            
+                            // Debug: Show the current library list
+                            if (libraries.isNotEmpty()) {
+                                outputText += "\n\n📚 Current libraries:\n" + libraries.joinToString("\n")
+                            } else {
+                                outputText += "\n\n📚 No libraries currently installed."
+                            }
+                            
                         } catch (e: Exception) {
-                            outputText = "Error uninstalling library: ${e.message}"
+                            outputText = "Error uninstalling library: ${e.message}\n\nStack trace: ${e.stackTraceToString()}"
                         } finally {
+                            Log.d("Arduino CLI", outputText)
                             isLoading = false
                         }
                     }
@@ -467,7 +510,7 @@ fun InstalledLibrariesTab(
                 style = MaterialTheme.typography.titleLarge
             )
             
-            IconButton(onClick = onRefreshClick) {
+                        IconButton(onClick = onRefreshClick) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh")
             }
         }
@@ -504,6 +547,15 @@ fun InstalledLibrariesTab(
                 }
             }
         } else {
+            // Debug: Show the count of libraries
+            Text(
+                text = "Found ${installedLibraries.size} installed libraries",
+                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -513,37 +565,103 @@ fun InstalledLibrariesTab(
                         modifier = Modifier.fillMaxWidth(),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(16.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.weight(1f)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.Top
                             ) {
-                                Text(
-                                    text = libraryName,
-                                    fontSize = 16.sp,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = "Installed library",
-                                    fontSize = 14.sp,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            
-                            IconButton(
-                                onClick = { onUninstallClick(libraryName) }
-                            ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Uninstall",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text(
+                                        text = libraryName,
+                                        fontSize = 18.sp,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.padding(bottom = 4.dp)
+                                    )
+                                    Text(
+                                        text = "Installed library",
+                                        fontSize = 14.sp,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(bottom = 8.dp)
+                                    )
+                                    
+                                    // Library details row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                    ) {
+                                        // Version info
+                                        Column {
+                                            Text(
+                                                text = "Version",
+                                                fontSize = 12.sp,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "Latest",
+                                                fontSize = 14.sp,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                        
+                                        // Author info
+                                        Column {
+                                            Text(
+                                                text = "Author",
+                                                fontSize = 12.sp,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "Arduino",
+                                                fontSize = 14.sp,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                        
+                                        // Category info
+                                        Column {
+                                            Text(
+                                                text = "Category",
+                                                fontSize = 12.sp,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            Text(
+                                                text = "Communication",
+                                                fontSize = 14.sp,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                        }
+                                    }
+                                }
+                                
+                                // Uninstall button
+                                OutlinedButton(
+                                    onClick = { onUninstallClick(libraryName) },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error
+                                    ),
+                                    border = BorderStroke(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.error
+                                    )
+                                ) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Uninstall")
+                                }
                             }
                         }
                     }
@@ -551,4 +669,54 @@ fun InstalledLibrariesTab(
             }
         }
     }
+}
+
+// Helper function to parse library results from the Go backend
+private fun parseLibraryResult(result: String): List<String> {
+    val lines = result.split("\n")
+    val libraries = mutableListOf<String>()
+    
+    for (line in lines) {
+        val trimmedLine = line.trim()
+        
+        // Try different patterns that the Go backend might return
+        when {
+            // Pattern: "Library: WiFi"
+            trimmedLine.startsWith("Library:") -> {
+                val libraryName = trimmedLine.substringAfter("Library:").trim()
+                if (libraryName.isNotEmpty()) {
+                    libraries.add(libraryName)
+                }
+            }
+            
+                    // Pattern: "- Servo 1.1.8 (by Arduino)" -> extract just "Servo"
+        trimmedLine.startsWith("- ") && trimmedLine.contains(" (by ") -> {
+            val fullName = trimmedLine.substringAfter("- ").substringBefore(" (by ").trim()
+            // Extract just the library name without version (e.g., "Servo 1.1.8" -> "Servo")
+            val libraryName = fullName.split(" ").firstOrNull() ?: fullName
+            if (libraryName.isNotEmpty()) {
+                libraries.add(libraryName)
+            }
+        }
+            
+            // Pattern: "WiFi - Arduino library for WiFi functionality"
+            trimmedLine.contains(" - ") && !trimmedLine.startsWith("-") -> {
+                val libraryName = trimmedLine.substringBefore(" - ").trim()
+                if (libraryName.isNotEmpty() && !libraryName.contains(":")) {
+                    libraries.add(libraryName)
+                }
+            }
+            
+            // Pattern: Just the library name (if it's a simple list)
+            trimmedLine.isNotEmpty() && !trimmedLine.startsWith("Installed") && 
+            !trimmedLine.startsWith("Libraries") && !trimmedLine.startsWith("Error") &&
+            !trimmedLine.startsWith("No") && !trimmedLine.contains(":") -> {
+                if (trimmedLine.length > 1 && trimmedLine.length < 50) {
+                    libraries.add(trimmedLine)
+                }
+            }
+        }
+    }
+    
+    return libraries.distinct().filter { it.isNotEmpty() }
 }

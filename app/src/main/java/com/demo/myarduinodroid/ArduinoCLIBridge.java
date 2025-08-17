@@ -93,6 +93,7 @@ public class ArduinoCLIBridge {
     public native String nativeInstallLibrary(String libName);
     public native String nativeInstallLibraryFromZip(String zipPath);
     public native String nativeUninstallLibrary(String libName);
+    public native String nativeReloadLibraries();
     public native String nativeSearchLibrary(String searchTerm);
     public native String nativeGetLibraryInfo(String libName);
     public native String nativeVerifySketch(String fqbn, String sketchDir);
@@ -329,6 +330,16 @@ public class ArduinoCLIBridge {
     public String uninstallLibrary(String libName) {
         try {
             return nativeUninstallLibrary(libName);
+        } catch (UnsatisfiedLinkError e) {
+            return "Error: Arduino CLI native library not available.\n" +
+                   "Please implement the native Arduino CLI library first.\n" +
+                   "Error: " + e.getMessage();
+        }
+    }
+
+    public String reloadLibraries() {
+        try {
+            return nativeReloadLibraries();
         } catch (UnsatisfiedLinkError e) {
             return "Error: Arduino CLI native library not available.\n" +
                    "Please implement the native Arduino CLI library first.\n" +

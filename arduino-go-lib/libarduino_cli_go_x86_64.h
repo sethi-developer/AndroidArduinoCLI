@@ -92,6 +92,7 @@ extern int GoListLibraries(char* outBuf, int outBufLen);
 extern int GoInstallLibrary(char* libName, char* outBuf, int outBufLen);
 extern int GoInstallLibraryFromZip(char* zipPath, char* outBuf, int outBufLen);
 extern int GoUninstallLibrary(char* libName, char* outBuf, int outBufLen);
+extern int GoReloadLibraries(char* outBuf, int outBufLen);
 extern int GoSearchLibrary(char* searchTerm, char* outBuf, int outBufLen);
 extern int GoGetLibraryInfo(char* libName, char* outBuf, int outBufLen);
 extern int GoVerifySketch(char* fqbn, char* sketchDir, char* outBuf, int outBufLen);

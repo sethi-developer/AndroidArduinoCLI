@@ -259,6 +259,20 @@ JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeUn
     return cstring_to_jstring(env, output);
 }
 
+// Reload libraries
+JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeReloadLibraries(
+    JNIEnv *env, jobject obj
+) {
+    char output[8192];
+    int result = GoReloadLibraries(output, sizeof(output));
+    
+    if (result != 0) {
+        return cstring_to_jstring(env, "Failed to reload libraries");
+    }
+    
+    return cstring_to_jstring(env, output);
+}
+
 // Search library
 JNIEXPORT jstring JNICALL Java_com_demo_myarduinodroid_ArduinoCLIBridge_nativeSearchLibrary(
     JNIEnv *env, jobject obj, jstring searchTerm

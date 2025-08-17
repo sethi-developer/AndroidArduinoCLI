@@ -188,6 +188,28 @@ func GoInitArduinoCLI() C.int {
 	return 0
 }
 
+// Helper functions for debugging
+func getCurrentWorkingDir() string {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "unknown"
+	}
+	return dir
+}
+
+func getFileType(info os.FileInfo) string {
+	if info.IsDir() {
+		return "directory"
+	}
+	if info.Mode().IsRegular() {
+		return "file"
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "symlink"
+	}
+	return "other"
+}
+
 //export GoCompileSketch
 func GoCompileSketch(fqbn *C.char, sketchDir *C.char, outDir *C.char, outBuf *C.char, outBufLen C.int) C.int {
 	fqbnStr := C.GoString(fqbn)
@@ -435,19 +457,132 @@ func GoUninstallLibrary(libName *C.char, outBuf *C.char, outBufLen C.int) C.int 
 	libStr := C.GoString(libName)
 	var output string
 
+	output = fmt.Sprintf("=== UNINSTALL LIBRARY DEBUG LOG ===\n")
+	output += fmt.Sprintf("Library to uninstall: %s\n", libStr)
+	output += fmt.Sprintf("Current working directory: %s\n", getCurrentWorkingDir())
+	output += fmt.Sprintf("Arduino data directory: %s\n", getArduinoDataDir())
+
 	// Check if library is installed
 	if lib, exists := installedLibraries[libStr]; exists {
-		// Remove installation directory
-		if err := os.RemoveAll(lib.InstallDir); err != nil {
-			output = fmt.Sprintf("Error uninstalling library %s: %v", libStr, err)
+		output += fmt.Sprintf("✓ Library found in memory: %s\n", libStr)
+		output += fmt.Sprintf("  - Install Directory: %s\n", lib.InstallDir)
+		output += fmt.Sprintf("  - Version: %s\n", lib.Version)
+		output += fmt.Sprintf("  - Author: %s\n", lib.Author)
+
+		// Check if directory exists before trying to remove
+		if _, err := os.Stat(lib.InstallDir); os.IsNotExist(err) {
+			output += fmt.Sprintf("⚠ WARNING: Install directory does not exist: %s\n", lib.InstallDir)
 		} else {
-			// Remove from installed libraries map
-			delete(installedLibraries, libStr)
-			output = fmt.Sprintf("Library %s uninstalled successfully!", libStr)
+			output += fmt.Sprintf("✓ Install directory exists: %s\n", lib.InstallDir)
+
+			// List contents before removal
+			if entries, err := os.ReadDir(lib.InstallDir); err == nil {
+				output += fmt.Sprintf("  Directory contents before removal:\n")
+				for _, entry := range entries {
+					info, _ := entry.Info()
+					if info != nil {
+						output += fmt.Sprintf("    - %s (%s, %d bytes)\n", entry.Name(),
+							getFileType(info), info.Size())
+					} else {
+						output += fmt.Sprintf("    - %s\n", entry.Name())
+					}
+				}
+			}
+		}
+
+		// Try to remove installation directory
+		output += fmt.Sprintf("\n🔄 Attempting to remove directory: %s\n", lib.InstallDir)
+		if err := os.RemoveAll(lib.InstallDir); err != nil {
+			output += fmt.Sprintf("❌ ERROR removing directory: %v\n", err)
+			output += fmt.Sprintf("   Error type: %T\n", err)
+			output += fmt.Sprintf("   Error details: %s\n", err.Error())
+		} else {
+			output += fmt.Sprintf("✓ Directory removed successfully\n")
+
+			// Verify removal
+			if _, err := os.Stat(lib.InstallDir); os.IsNotExist(err) {
+				output += fmt.Sprintf("✓ Verification: Directory no longer exists\n")
+			} else {
+				output += fmt.Sprintf("⚠ WARNING: Directory still exists after removal attempt\n")
+			}
+		}
+
+		// Remove from installed libraries map
+		output += fmt.Sprintf("\n🔄 Removing from memory map...\n")
+		delete(installedLibraries, libStr)
+		output += fmt.Sprintf("✓ Removed from memory map\n")
+		output += fmt.Sprintf("✓ Current library count in memory: %d\n", len(installedLibraries))
+
+		output += fmt.Sprintf("\n🎉 Library %s uninstalled successfully!\n", libStr)
+	} else {
+		output += fmt.Sprintf("❌ Library %s is not installed in memory\n", libStr)
+		output += fmt.Sprintf("Available libraries in memory:\n")
+		for name := range installedLibraries {
+			output += fmt.Sprintf("  - %s\n", name)
+		}
+	}
+
+	output += fmt.Sprintf("\n=== END UNINSTALL LOG ===\n")
+
+	copyLen := len(output)
+	if copyLen > int(outBufLen)-1 {
+		copyLen = int(outBufLen) - 1
+	}
+	copy((*[1 << 30]byte)(unsafe.Pointer(outBuf))[:copyLen], output[:copyLen])
+	(*[1 << 30]byte)(unsafe.Pointer(outBuf))[copyLen] = 0
+	return 0
+}
+
+//export GoReloadLibraries
+func GoReloadLibraries(outBuf *C.char, outBufLen C.int) C.int {
+	var output string
+
+	output = fmt.Sprintf("=== RELOAD LIBRARIES DEBUG LOG ===\n")
+	output += fmt.Sprintf("Current working directory: %s\n", getCurrentWorkingDir())
+	output += fmt.Sprintf("Arduino data directory: %s\n", getArduinoDataDir())
+
+	libDir := filepath.Join(getArduinoDataDir(), "libraries")
+	output += fmt.Sprintf("Libraries directory: %s\n", libDir)
+
+	// Check if libraries directory exists
+	if _, err := os.Stat(libDir); os.IsNotExist(err) {
+		output += fmt.Sprintf("⚠ WARNING: Libraries directory does not exist: %s\n", libDir)
+		output += fmt.Sprintf("Creating libraries directory...\n")
+		if err := os.MkdirAll(libDir, 0755); err != nil {
+			output += fmt.Sprintf("❌ ERROR creating libraries directory: %v\n", err)
+		} else {
+			output += fmt.Sprintf("✓ Libraries directory created successfully\n")
 		}
 	} else {
-		output = fmt.Sprintf("Library %s is not installed", libStr)
+		output += fmt.Sprintf("✓ Libraries directory exists: %s\n", libDir)
 	}
+
+	// Clear the current in-memory state
+	output += fmt.Sprintf("\n🔄 Clearing in-memory library state...\n")
+	oldCount := len(installedLibraries)
+	installedLibraries = make(map[string]*ArduinoLibrary)
+	output += fmt.Sprintf("✓ Cleared %d libraries from memory\n", oldCount)
+
+	// Reload libraries from file system
+	output += fmt.Sprintf("\n🔄 Reloading libraries from file system...\n")
+	loadInstalledLibraries()
+
+	// Count the libraries
+	count := len(installedLibraries)
+	output += fmt.Sprintf("✓ Reloaded %d libraries from file system\n", count)
+
+	// List the libraries
+	if count > 0 {
+		output += fmt.Sprintf("\n📚 Installed libraries:\n")
+		for name, lib := range installedLibraries {
+			output += fmt.Sprintf("  - %s (v%s by %s)\n", name, lib.Version, lib.Author)
+			output += fmt.Sprintf("    Install Dir: %s\n", lib.InstallDir)
+		}
+	} else {
+		output += fmt.Sprintf("\n📚 No libraries found in file system\n")
+	}
+
+	output += fmt.Sprintf("\n=== END RELOAD LOG ===\n")
 
 	copyLen := len(output)
 	if copyLen > int(outBufLen)-1 {
@@ -551,19 +686,36 @@ func GoVerifySketch(fqbn *C.char, sketchDir *C.char, outBuf *C.char, outBufLen C
 
 func loadInstalledLibraries() {
 	libDir := filepath.Join(getArduinoDataDir(), "libraries")
+
+	// Debug logging
+	fmt.Printf("DEBUG: Scanning libraries directory: %s\n", libDir)
+
 	entries, err := os.ReadDir(libDir)
 	if err != nil {
+		fmt.Printf("DEBUG: Error reading libraries directory: %v\n", err)
 		return
 	}
 
+	fmt.Printf("DEBUG: Found %d entries in libraries directory\n", len(entries))
+
 	for _, entry := range entries {
 		if entry.IsDir() {
-			propsFile := filepath.Join(libDir, entry.Name(), "library.properties")
+			libName := entry.Name()
+			propsFile := filepath.Join(libDir, libName, "library.properties")
+			fmt.Printf("DEBUG: Checking library: %s, properties file: %s\n", libName, propsFile)
+
 			if lib := loadLibraryFromProperties(propsFile); lib != nil {
+				fmt.Printf("DEBUG: Successfully loaded library: %s (v%s by %s)\n", lib.Name, lib.Version, lib.Author)
 				installedLibraries[lib.Name] = lib
+			} else {
+				fmt.Printf("DEBUG: Failed to load library: %s (no valid properties file)\n", libName)
 			}
+		} else {
+			fmt.Printf("DEBUG: Skipping non-directory entry: %s\n", entry.Name())
 		}
 	}
+
+	fmt.Printf("DEBUG: Total libraries loaded: %d\n", len(installedLibraries))
 }
 
 func loadInstalledCores() {
@@ -928,8 +1080,13 @@ func installArduinoLibrary(libName string) error {
 	// 2. Download from repository
 	// 3. Install and configure
 
+	fmt.Printf("DEBUG: Installing library: %s\n", libName)
+	fmt.Printf("DEBUG: Current working directory: %s\n", getCurrentWorkingDir())
+	fmt.Printf("DEBUG: Arduino data directory: %s\n", getArduinoDataDir())
+
 	// Get library information from Arduino Library Manager
 	libInfo := getLibraryInfoFromManager(libName)
+	fmt.Printf("DEBUG: Library info retrieved: %s v%s by %s\n", libInfo.Name, libInfo.Version, libInfo.Author)
 
 	lib := &ArduinoLibrary{
 		Name:          libName,
@@ -946,7 +1103,25 @@ func installArduinoLibrary(libName string) error {
 		License:       libInfo.License,
 	}
 
+	fmt.Printf("DEBUG: Created library struct: %s v%s\n", lib.Name, lib.Version)
+	fmt.Printf("DEBUG: Install directory: %s\n", lib.InstallDir)
+
+	// Check if library already exists
+	if existingLib, exists := installedLibraries[libName]; exists {
+		fmt.Printf("DEBUG: WARNING: Library %s already exists in memory!\n", libName)
+		fmt.Printf("DEBUG: Existing: %s v%s, New: %s v%s\n",
+			existingLib.Name, existingLib.Version, lib.Name, lib.Version)
+	}
+
 	installedLibraries[libName] = lib
+	fmt.Printf("DEBUG: Added to installedLibraries map. Total count: %d\n", len(installedLibraries))
+
+	// List all libraries in memory
+	fmt.Printf("DEBUG: Current libraries in memory:\n")
+	for name, lib := range installedLibraries {
+		fmt.Printf("DEBUG:   - %s v%s\n", name, lib.Version)
+	}
+
 	os.MkdirAll(lib.InstallDir, 0755)
 
 	// Create library.properties file
@@ -964,7 +1139,17 @@ license=%s
 `, lib.Name, lib.Version, lib.Author, lib.Maintainer, lib.Description, lib.Description, lib.Category, lib.Website, lib.Repository, lib.License)
 
 	propsFile := filepath.Join(lib.InstallDir, "library.properties")
-	return os.WriteFile(propsFile, []byte(propsContent), 0644)
+	fmt.Printf("DEBUG: Creating library.properties file: %s\n", propsFile)
+	fmt.Printf("DEBUG: Properties content:\n%s\n", propsContent)
+
+	err := os.WriteFile(propsFile, []byte(propsContent), 0644)
+	if err != nil {
+		fmt.Printf("DEBUG: ERROR writing properties file: %v\n", err)
+	} else {
+		fmt.Printf("DEBUG: Successfully created properties file\n")
+	}
+
+	return err
 }
 
 func getLibraryInfoFromManager(libName string) *ArduinoLibrary {
